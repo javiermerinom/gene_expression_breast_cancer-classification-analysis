@@ -1,0 +1,60 @@
+# ============================
+# General
+# ============================
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+*.bak
+~$*
+
+# ============================
+# Python
+# ============================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.eggs/
+*.env
+*.venv
+.venv/
+.env/
+*.sqlite3
+*.db
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+
+# ============================
+# R / RStudio
+# ============================
+.Rhistory
+.RData
+.Ruserdata
+.Rproj.user/
+.Rproj
+*.Rproj
+
+# R Markdown
+*_cache/
+cache/
+*.utf8.md
+*.knit.md
+
+# ============================
+# Office Temp Files
+# ============================
+~$*.docx
+~$*.xlsx
+~$*.pptx
+
+# ============================
+# OS-specific junk
+# ============================
+*.swp
+*.swo
+*.idea/
+.vscode/
