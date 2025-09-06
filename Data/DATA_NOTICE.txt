@@ -1,0 +1,8 @@
+Data Availability Notice
+
+The data used in this project was obtained from The Cancer Genome Atlas (TCGA), specifically the TCGA-BRCA (Breast Invasive Carcinoma) RNA-seq dataset, along with corresponding clinical metadata.
+
+Due to its large size, the dataset is not included in this repository. Users who wish to reproduce the analysis can access the data directly through the Genomic Data Commons (GDC) portal at:
+https://portal.gdc.cancer.gov/
+
+While the raw TCGA-BRCA dataset is not included in this repository due to its size, we provide the R code used to extract and preprocess the data from the Genomic Data Commons (GDC). This allows users to reproduce the dataset preparation step directly from the original source.

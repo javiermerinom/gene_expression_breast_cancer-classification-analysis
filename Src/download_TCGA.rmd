@@ -1,0 +1,510 @@
+---
+title: ""
+date: "`r format(Sys.Date())`"
+output:
+  rmarkdown::html_document:
+    # theme: cerulean
+    # highlight: pygments
+    toc: true
+    toc_float:
+      collapsed: true    
+    number_sections: true
+    code_folding: hide
+---
+
+```{r setup, include=FALSE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+## Required packages
+
+```{r, message=FALSE, warning=FALSE, results='hide'}
+library(TCGAbiolinks)
+library(dplyr)
+library(DT)
+library("SummarizedExperiment")
+```
+
+```{r}
+GDCprojects = getGDCprojects()
+all_projects = GDCprojects[c("project_id", "name")]
+```
+
+## Set output path to store downloaded data
+
+```{r}
+current_path <- dirname(rstudioapi::getSourceEditorContext()$path)
+current_path <- sub("02_scripts","03_data",current_path)
+#current_path <- "C:/Users/angel/Downloads/GDCdata"
+setwd(current_path)
+```
+
+## Part I: Use TCGA Breast Cancer Data (BRCA) to extract Gene Data
+
+```{r}
+project_name = "TCGA-BRCA"
+
+project_summary <- TCGAbiolinks:::getProjectSummary(project_name)
+
+query_TCGA = GDCquery(
+    project = project_name,
+    data.category = "Transcriptome Profiling",
+    experimental.strategy = "RNA-Seq",
+    data.type = "Gene Expression Quantification",
+    workflow.type = "STAR - Counts",
+    access = "open",
+    data.format = "TSV"
+)
+metadata <- getResults(query_TCGA)
+
+GDCdownload(query = query_TCGA)
+
+tcga_data = GDCprepare(query = query_TCGA, 
+                       save = TRUE, 
+                       save.filename = paste0(project_name,"_RNAseq.rda"))
+```
+
+### 1. Read assay and column info
+
+```{r}
+sample_info = colData(tcga_data) |> as.data.frame()
+sample_assay = assay(tcga_data) |> as.data.frame()
+```
+
+```{r}
+write_tsv(sample_info, paste0(current_path,"/", project_name,"_sample_info.tsv"))
+write_tsv(sample_assay, paste0(current_path,"/", project_name,"_sample_assay.tsv"))
+```
+
+### 2. Extract gene metedata and save to TSV
+
+```{r}
+gene_metadata = as.data.frame((rowData(tcga_data)))
+```
+
+```{r}
+write_tsv(gene_metadata, paste0(current_path,"/", project_name,"_gene_metadata.tsv"))
+```
+
+### 3. Add gene_name to assay as column
+
+```{r}
+# Turn Ensemble ID from row to column
+sample_assay_copy <- sample_assay
+
+# Convert row names to a new column
+sample_assay_copy$gene_name <- rownames(sample_assay_copy)
+rownames(sample_assay_copy) <- NULL
+```
+
+### 4. Write to TSV
+
+```{r}
+write_tsv(sample_assay_copy, paste0(current_path,"/", project_name,"_sample_assay_with_gene.tsv"))
+```
+
+## Part II: Use GenomicDataCommons to extract Clinical Data
+
+```{r}
+# BiocManager::install("GenomicDataCommons")
+
+library(GenomicDataCommons)
+
+# Get all fields related to 'diagnoses' from the 'cases' object
+diagnoses_fields <- GenomicDataCommons::grep_fields('cases', 'diagnoses')
+
+# Get all fields related to 'follow_ups' from the 'cases' object
+follow_ups_fields <- GenomicDataCommons::grep_fields('cases', 'follow_ups')
+
+# Get all fields related to 'demographic' from the 'cases' object
+demographic_fields <- GenomicDataCommons::grep_fields('cases', 'demographic')
+
+# Get selected fields related to 'samples' from the 'cases' object
+selected_samples_fields <- c(
+  "samples.composition",
+  "samples.created_datetime",
+  "samples.current_weight",
+  "samples.days_to_collection",
+  "samples.days_to_sample_procurement",
+  "samples.freezing_method",
+  "samples.initial_weight",
+  "samples.intermediate_dimension",
+  "samples.is_ffpe",
+  "samples.longest_dimension",
+  "samples.oct_embedded",
+  "samples.pathology_report_uuid",
+  "samples.preservation_method",
+  "samples.sample_id",
+  "samples.sample_type",
+  "samples.sample_type_id",
+  "samples.shortest_dimension",
+  "samples.state",
+  "samples.submitter_id",
+  "samples.time_between_clamping_and_freezing",
+  "samples.time_between_excision_and_freezing",
+  "samples.tissue_type",
+  "samples.tumor_code",
+  "samples.tumor_code_id",
+  "samples.tumor_descriptor",
+  "samples.updated_datetime"
+)
+
+# Get the cases for the 'TCGA-BRCA' project and select the relevant fields
+metadata_GDC <- cases() %>%
+    GenomicDataCommons::filter(project.project_id == 'TCGA-BRCA') %>%
+    GenomicDataCommons::select(c(
+        default_fields('cases'),  # Include all default fields for 'cases'
+        diagnoses_fields,         # Add all the 'diagnoses' fields
+        follow_ups_fields,         # Add all the 'follow_ups' fields
+        demographic_fields,         # Add all the 'demographic' fields
+        selected_samples_fields      # Add selected 'samples' fields   
+    )) %>%
+    results_all()
+```
+
+### 1. Export Case Data
+
+```{r}
+# Combine selected columns into a dataframe
+case <- data.frame(case_id = metadata_GDC[["id"]],
+                   submitter_id = metadata_GDC[["submitter_id"]],
+                   consent_type = metadata_GDC[["consent_type"]],
+                   days_to_consent = metadata_GDC[["days_to_consent"]],
+                   disease_type = metadata_GDC[["disease_type"]],
+                   index_date = metadata_GDC[["index_date"]],
+                   lost_to_followup = metadata_GDC[["lost_to_followup"]],
+                   primary_site = metadata_GDC[["primary_site"]])
+
+# View the updated dataframe
+head(case)
+```
+
+### 2. Export Demographic Data
+
+```{r}
+# Extract the demographic data
+demographic <- metadata_GDC[["demographic"]]
+
+# Convert the list to a dataframe
+demographic <- as.data.frame(demographic)
+
+# Add the row labels as a new column called 'case_id'
+demographic$case_id <- rownames(demographic)
+
+# Reorder the columns to have 'case_id' as the first column
+demographic <- demographic[, c("case_id", setdiff(names(demographic), "case_id"))]
+
+# Reindex the row labels (reset them to be sequential starting from 1)
+rownames(demographic) <- NULL
+
+# View the dataframe
+head(demographic)
+```
+
+```{r}
+# Drop columns with 90% missing
+missing_90_percent <- colnames(demographic)[apply(demographic, 2, function(x) mean(is.na(x))) > 0.9]
+demographic <- demographic[, !colnames(demographic) %in% missing_90_percent]
+```
+
+### 3. Export Follow Ups Data
+
+```{r}
+# List of the specific columns you want to select
+selected_columns <- c(
+  "follow_up_id",
+  "submitter_id",
+  "case_id",
+  "days_to_follow_up",
+  "days_to_progression",
+  "days_to_recurrence",
+  "disease_response",
+  "progression_or_recurrence",
+  "progression_or_recurrence_anatomic_site",
+  "progression_or_recurrence_type",
+  "state",
+  "timepoint_category"
+)
+
+# Initialize an empty dataframe with only the selected columns
+follow_ups <- data.frame(matrix(ncol = length(selected_columns), nrow = 0))
+colnames(follow_ups) <- selected_columns
+
+# Iterate through all the follow_up entries
+for (case_id in names(metadata_GDC[["follow_ups"]])) {
+  # Access the specific follow_up entry for the current case_id
+  follow_ups_case <- metadata_GDC[["follow_ups"]][[case_id]]
+  
+  # If follow_ups_case is a list of multiple rows, process them
+  if (is.list(follow_ups_case)) {
+    
+    # Check if there are follow-up entries to process
+    num_rows <- length(follow_ups_case[[1]])  # Number of rows to process, based on the first column's length
+    
+    # Iterate through each follow_up for this case_id
+    for (i in 1:num_rows) {
+      # Create a new row with all selected columns initialized to NA
+      new_row <- as.data.frame(matrix(NA, nrow = 1, ncol = length(selected_columns)))
+      colnames(new_row) <- selected_columns
+      
+      # Set the 'case_id' column
+      new_row$case_id <- case_id
+      
+      # Iterate through each column we want to select
+      for (col in selected_columns) {
+        if (col %in% names(follow_ups_case)) {
+          # Extract the column values for the current row (handle NA if the row index exceeds the column length)
+          column_values <- follow_ups_case[[col]]
+          
+          # If the current row index is valid, assign the value; else assign NA
+          if (i <= length(column_values)) {
+            new_row[[col]] <- column_values[i]
+          }
+        }
+      }
+      
+      # Append the new_row to the follow_ups dataframe
+      follow_ups <- rbind(follow_ups, new_row)
+    }
+  }
+}
+```
+
+```{r}
+# Remove rows where 'submitter_id' is NA
+follow_ups <- follow_ups[!is.na(follow_ups$submitter_id), ]
+```
+
+```{r}
+# Drop columns with 90% missing
+missing_90_percent <- colnames(follow_ups)[apply(follow_ups, 2, function(x) mean(is.na(x))) > 0.9]
+follow_ups <- follow_ups[, !colnames(follow_ups) %in% missing_90_percent]
+```
+
+### 4. Export Samples Data
+
+```{r}
+# Initialize an empty list to store the rows
+samples_list <- list()
+
+# Iterate through all the case_ids in 'samples'
+for (case_id in names(metadata_GDC[["samples"]])) {
+  # Get the sample data for the current case_id
+  samples_case <- metadata_GDC[["samples"]][[case_id]]
+  
+  # If samples_case is a dataframe, we can directly append it to the samples_list
+  if (is.data.frame(samples_case)) {
+    # Add the 'case_id' column to the dataframe
+    samples_case$case_id <- case_id
+    
+    # Append the samples_case dataframe to the list
+    samples_list[[length(samples_list) + 1]] <- samples_case
+  }
+}
+
+# Combine all the individual rows into one large dataframe
+samples_df <- do.call(rbind, samples_list)
+
+# Reorder the columns
+samples_df <- samples_df[, c("case_id", "sample_id", "submitter_id", "pathology_report_uuid", setdiff(names(samples_df), c("case_id", "sample_id", "submitter_id", "pathology_report_uuid")))]
+
+# View the populated dataframe
+head(samples_df)
+```
+
+```{r}
+# Drop columns with 90% missing
+missing_90_percent <- colnames(samples_df)[apply(samples_df, 2, function(x) mean(is.na(x))) > 0.9]
+samples_df <- samples_df[, !colnames(samples_df) %in% missing_90_percent]
+```
+
+### 5. Export Diagnoses Data
+
+```{r}
+# Define the list of selected columns for the diagnosis data
+selected_columns <- c(
+  "diagnosis_id",
+  "submitter_id",
+  "case_id",
+  "age_at_diagnosis",
+  "diagnosis_is_primary_disease",
+  "morphology",
+  "primary_diagnosis",
+  "site_of_resection_or_biopsy",
+  "tissue_or_organ_of_origin",
+  "ajcc_pathologic_m",
+  "ajcc_pathologic_n",
+  "ajcc_pathologic_stage",
+  "ajcc_pathologic_t",
+  "ajcc_staging_system_edition",
+  "classification_of_tumor",
+  "laterality",
+  "metastasis_at_diagnosis",
+  "method_of_diagnosis",
+  "prior_malignancy",
+  "prior_treatment",
+  "synchronous_malignancy",
+  "year_of_diagnosis",
+  "days_to_diagnosis",
+  "icd_10_code"
+)
+
+# Initialize an empty dataframe with only the selected columns
+diagnosis_df <- data.frame(matrix(ncol = length(selected_columns), nrow = 0))
+colnames(diagnosis_df) <- selected_columns
+
+# Iterate through all the case_ids in 'diagnoses'
+for (case_id in names(metadata_GDC[["diagnoses"]])) {
+  # Access the specific diagnosis entry for the current case_id
+  diagnoses_case <- metadata_GDC[["diagnoses"]][[case_id]]
+  
+  # If diagnoses_case is a list of multiple rows (which they often are)
+  if (is.list(diagnoses_case)) {
+    
+    # Check if there are diagnosis entries to process (based on the first column's length)
+    num_rows <- length(diagnoses_case[[1]])  # Number of rows to process
+    
+    # Iterate through each diagnosis entry for this case_id
+    for (i in 1:num_rows) {
+      # Create a new row with all selected columns initialized to NA
+      new_row <- as.data.frame(matrix(NA, nrow = 1, ncol = length(selected_columns)))
+      colnames(new_row) <- selected_columns
+      
+      # Set the 'case_id' column
+      new_row$case_id <- case_id
+      
+      # Iterate through each column we want to select
+      for (col in selected_columns) {
+        if (col %in% names(diagnoses_case)) {
+          # Extract the column values for the current row (handle NA if the row index exceeds the column length)
+          column_values <- diagnoses_case[[col]]
+          
+          # If the current row index is valid, assign the value; else assign NA
+          if (i <= length(column_values)) {
+            new_row[[col]] <- column_values[i]
+          }
+        }
+      }
+      
+      # Append the new_row to the diagnosis_df dataframe
+      diagnosis_df <- rbind(diagnosis_df, new_row)
+    }
+  }
+}
+
+# View the populated dataframe
+head(diagnosis_df)
+```
+
+### 6. Export Treatments Data
+
+```{r}
+# Define the selected columns for the treatments data
+selected_columns <- c(
+  "case_id",  "diagnosis_id", "treatment_id", "submitter_id", "clinical_trial_indicator",
+  "days_to_treatment_end", "days_to_treatment_start", "initial_disease_status", "margin_status", "number_of_cycles", "prescribed_dose", "prescribed_dose_units",   "therapeutic_agents", "treatment_dose", "treatment_dose_units", "treatment_intent_type", "treatment_or_therapy", "treatment_outcome", "treatment_type"
+)
+
+# Initialize an empty dataframe with the selected columns
+treatments_df <- data.frame(matrix(ncol = length(selected_columns), nrow = 0))
+colnames(treatments_df) <- selected_columns
+
+# Step 1: Populate treatments_df with treatments data, keeping diagnosis_id as NA for now
+for (case_id in names(metadata_GDC[["diagnoses"]])) {
+  # Access the treatments data for the current case_id
+  treatments_case <- metadata_GDC[["diagnoses"]][[case_id]][["treatments"]]
+  
+  # Check if treatments_case is not NULL and is a list
+  if (!is.null(treatments_case) && is.list(treatments_case)) {
+    
+    # Iterate through each treatment for this case_id
+    for (treatment in treatments_case) {
+      # Create a new row with all selected columns initialized to NA
+      new_row <- as.data.frame(matrix(NA, nrow = 1, ncol = length(selected_columns)))
+      colnames(new_row) <- selected_columns
+      
+      # Set the 'case_id' column
+      new_row$case_id <- case_id
+      
+      # Iterate through each column we want to select and handle multi-value columns
+      for (col in selected_columns) {
+        if (col %in% names(treatment)) {
+          # Extract the column values for the current treatment
+          column_values <- treatment[[col]]
+          
+          # If the column contains multiple values (list), we assign the first value to the new row
+          if (length(column_values) == 1) {
+            new_row[[col]] <- column_values[1]
+          } else {
+            # If more than one value, we assign the first value to the row (or you can concatenate them if needed)
+            new_row[[col]] <- column_values[1]  # or you can handle this differently based on your needs
+          }
+        }
+      }
+      
+      # Append the new_row to the treatments_df dataframe
+      treatments_df <- rbind(treatments_df, new_row)
+    }
+  }
+}
+
+# Step 2: Assign the correct diagnosis_id for each row
+diagnosis_id_list <- list()  # This will hold all the diagnosis_ids in order
+
+# Iterate through all the case_ids in 'diagnoses'
+for (case_id in names(metadata_GDC[["diagnoses"]])) {
+  # Access the diagnosis data for the current case_id
+  diagnosis_data <- metadata_GDC[["diagnoses"]][[case_id]]
+  
+  # Extract the diagnosis_ids for the current case_id
+  diagnosis_ids <- diagnosis_data[["diagnosis_id"]]
+  
+  # Store these diagnosis_ids in the list (preserving the order)
+  diagnosis_id_list[[case_id]] <- diagnosis_ids
+}
+
+# Now we modify the treatments_df to assign diagnosis_id correctly
+row_index <- 1  # Row index for treatments_df
+for (case_id in names(diagnosis_id_list)) {
+  diagnosis_ids <- diagnosis_id_list[[case_id]]
+  
+  # For each treatment of a case_id, assign the corresponding diagnosis_id
+  for (diagnosis_id in diagnosis_ids) {
+    # If there are treatments, assign the correct diagnosis_id to the treatment rows
+    if (row_index <= nrow(treatments_df) && treatments_df$case_id[row_index] == case_id) {
+      treatments_df$diagnosis_id[row_index] <- diagnosis_id
+      row_index <- row_index + 1
+    }
+  }
+}
+
+# View the populated dataframe
+head(treatments_df)
+
+```
+
+```{r}
+# Remove rows where treatment_id is NA
+treatments_df <- treatments_df[!is.na(treatments_df$treatment_id), ]
+```
+
+### 7. Write to TSV
+
+```{r}
+# Load the readr package if you haven't already
+library(readr)
+
+# Write each dataframe to a separate TSV file using write_tsv
+write_tsv(case, "case.tsv")
+write_tsv(demographic, "demographic.tsv")
+write_tsv(follow_ups, "follow_ups.tsv")
+write_tsv(samples_df, "samples.tsv")
+write_tsv(diagnosis_df, "diagnosis.tsv")
+write_tsv(treatments_df, "treatments.tsv")
+```
+
+## Reference
+
+1.  <https://bioconductor.org/packages/devel/bioc/vignettes/TCGAbiolinks/inst/doc/analysis.html>
+
+2.  <https://www.costalab.org/wp-content/uploads/2020/11/R_class_D3.html>
