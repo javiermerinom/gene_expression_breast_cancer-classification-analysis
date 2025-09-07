@@ -88,4 +88,13 @@ The main objectives of this project are:
 ├── Src/            # Jupyter notebooks for EDA, DEA, modeling, and survival analysis. R file for download data set.  
 ├── Documentation/              # Final project report and presentation
 ├── Output/              # Gene information
-├── README.md             # Project overview (this file)  
+├── README.md             # Project overview (this file)
+
+---
+
+## 🙌 Acknowledgments  
+Developed by:  
+- Javier Merino  
+- Meyliani Sanjaya  
+- Angeli De los Reyes  
+- Nay Zaw Lin  
