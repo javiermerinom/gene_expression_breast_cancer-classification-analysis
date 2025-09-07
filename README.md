@@ -89,7 +89,7 @@ The main objectives of this project are:
 ├── Documentation/              # Final project report and presentation
 ├── Output/              # Gene information
 ├── README.md             # Project overview (this file)
-
+```
 ---
 
 ## 🙌 Acknowledgments  
