@@ -1,4 +1,4 @@
-# Gene Expression Analysis for Breast Cancer Classification and Survival Analysis
+# Gene Expression Analysis for Breast Cancer Stage Classification and Survival Analysis
 
 ## 🏗️ Project Context
 This was a research project developed as teamwork for the third term of the Post-Degree Diploma in Data Analytics in Langara College.
